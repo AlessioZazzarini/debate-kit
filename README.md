@@ -53,7 +53,7 @@ Open `.claude/skills/debate/architecture-brief.md` and fill in your tech stack, 
 /debate review                 # Code review recent git changes
 /debate review src/lib/        # Code review a specific path
 /debate --provider codex       # Use ChatGPT / GPT-5.2
-/debate --provider gemini      # Use Gemini 2.5 Pro
+/debate --provider gemini      # Use Gemini 3 Pro
 /debate --provider claude      # Use Claude Sonnet (same-family fallback)
 ```
 
@@ -114,7 +114,7 @@ The whole point of `/debate` is that a **different model family** reviews your w
 | Provider | Model | Flag | Install | Why |
 |----------|-------|------|---------|-----|
 | **Codex CLI** *(recommended)* | GPT-5.2 | `--provider codex` | `npm install -g @openai/codex` + `OPENAI_API_KEY` | Different family, strong on logic and edge cases |
-| **Gemini CLI** | Gemini 2.5 Pro | `--provider gemini` | Install Gemini CLI + `GEMINI_API_KEY` | Different family, strong on data flow and API design |
+| **Gemini CLI** | Gemini 3 Pro | `--provider gemini` | Install Gemini CLI + `GEMINI_API_KEY` | Different family, strong on data flow and API design |
 | **Claude CLI** *(fallback)* | Sonnet | `--provider claude` | Already installed | Same family — less diverse, but zero setup |
 
 **Auto-detection:** When no `--provider` flag is given, the skill checks which CLIs are installed and picks the first available in the order above (codex → gemini → claude).

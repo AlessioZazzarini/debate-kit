@@ -242,7 +242,7 @@ Like Codex, the review prompt must be prepended to the context file. When using 
 
 ```bash
 gemini \
-  -m gemini-2.5-pro \
+  -m gemini-3-pro \
   < "$DEBATE_DIR/context.md" \
   > "$DEBATE_DIR/review.txt" \
   2> "$DEBATE_DIR/stderr.txt"
@@ -437,7 +437,7 @@ After the loop completes, present a summary:
 ## Debate Summary
 
 **Mode:** Plan Review | Debug Review | Code Review
-**Provider:** Codex CLI (gpt-5.2) | Gemini CLI (gemini-2.5-pro) | Claude CLI (sonnet)
+**Provider:** Codex CLI (gpt-5.2) | Gemini CLI (gemini-3-pro) | Claude CLI (sonnet)
 **Rounds:** N
 **Final verdict:** APPROVED | REVISE issues=N critical=N | issues=N critical=N (review mode)
 

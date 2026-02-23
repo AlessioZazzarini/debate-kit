@@ -42,10 +42,10 @@ codex exec -m gpt-5.2 -s read-only - < context.md > review.txt
 
 ### Gemini CLI
 
-Runs Gemini 2.5 Pro — yet another model family:
+Runs Gemini 3 Pro — yet another model family:
 
 ```
-gemini -m gemini-2.5-pro < context.md > review.txt
+gemini -m gemini-3-pro < context.md > review.txt
 ```
 
 - Read-only access to codebase
