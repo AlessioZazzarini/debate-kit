@@ -8,24 +8,26 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
-  <a href="https://claude.ai/claude-code"><img src="https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet" alt="Built for Claude Code" /></a>
+  <a href="https://docs.anthropic.com/en/docs/claude-code"><img src="https://img.shields.io/badge/built%20for-Claude%20Code-blueviolet" alt="Built for Claude Code" /></a>
+  <a href="#providers"><img src="https://img.shields.io/badge/reviewers-ChatGPT%20%C2%B7%20Gemini%20%C2%B7%20Claude-orange" alt="Multi-model" /></a>
   <a href="#cost-breakdown"><img src="https://img.shields.io/badge/cost-%240.50--1.50%2Frun-green" alt="Cost per run" /></a>
 </p>
 
 ---
 
-You write a plan or diagnose a bug in Claude Code. Instead of trusting yourself, you run `/debate` and a **separate LLM instance** (Claude Sonnet or GPT-5.2) reviews your work with read-only codebase access. The reviewer gives a verdict: **APPROVED** or **REVISE**. If REVISE, the orchestrator fixes the issues and resubmits — up to 3 rounds.
+You write a plan or diagnose a bug in Claude Code. Instead of trusting yourself, you run `/debate` and a **different model** — ChatGPT, Gemini, or Claude Sonnet — reviews your work with read-only codebase access. Cross-model diversity is the point: different model families catch different blind spots. The reviewer gives a verdict: **APPROVED** or **REVISE**. If REVISE, the orchestrator fixes the issues and resubmits — up to 3 rounds.
 
 ```
-You (Claude Opus)           Reviewer (Sonnet / GPT-5.2)
- │                           │
- ├─ Write plan               │
- ├─ /debate ────────────────►│ Read codebase (read-only)
- │                           │ Analyze plan
- │◄──── VERDICT: REVISE ─────┤
- ├─ Fix issues               │
- ├─ Resubmit ───────────────►│ Re-review
- │◄──── VERDICT: APPROVED ───┤
+You (Claude Opus)           Reviewer (ChatGPT / Gemini / Sonnet)
+ │  orchestrator              │  read-only challenger
+ │                            │
+ ├─ Write plan                │
+ ├─ /debate ─────────────────►│ Read codebase
+ │                            │ Analyze plan
+ │◄──── VERDICT: REVISE ──────┤
+ ├─ Fix issues                │
+ ├─ Resubmit ────────────────►│ Re-review
+ │◄──── VERDICT: APPROVED ────┤
  └─ Continue with confidence
 ```
 
@@ -50,7 +52,9 @@ Open `.claude/skills/debate/architecture-brief.md` and fill in your tech stack, 
 /debate debug                  # Challenge a bug diagnosis
 /debate review                 # Code review recent git changes
 /debate review src/lib/        # Code review a specific path
-/debate --provider codex       # Use GPT-5.2 instead of Claude Sonnet
+/debate --provider codex       # Use ChatGPT / GPT-5.2
+/debate --provider gemini      # Use Gemini 2.5 Pro
+/debate --provider claude      # Use Claude Sonnet (same-family fallback)
 ```
 
 ## Prerequisites
@@ -59,7 +63,7 @@ Open `.claude/skills/debate/architecture-brief.md` and fill in your tech stack, 
 |------------|-------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | The CLI tool — you're probably already using it |
 | `ANTHROPIC_API_KEY` | Set in your environment |
-| [Codex CLI](https://github.com/openai/codex) *(optional)* | For cross-model diversity: `npm install -g @openai/codex` + `OPENAI_API_KEY` |
+| At least one reviewer CLI | See [Providers](#providers) below |
 
 ## How It Works
 
@@ -103,12 +107,17 @@ When a plan or review touches matching paths or keywords, the context is automat
 
 Copy the closest example, rename it, and customize. Files starting with `_` are templates and are excluded from matching.
 
-### Providers *(optional)*
+### Providers
 
-| Provider | Model | Flag | Notes |
-|----------|-------|------|-------|
-| Claude CLI *(default)* | Sonnet | — | Uses your existing Anthropic key |
-| Codex CLI | GPT-5.2 | `--provider codex` | Cross-model diversity; different blind spots |
+The whole point of `/debate` is that a **different model family** reviews your work. Claude reviewing Claude catches fewer blind spots than ChatGPT or Gemini reviewing Claude.
+
+| Provider | Model | Flag | Install | Why |
+|----------|-------|------|---------|-----|
+| **Codex CLI** *(recommended)* | GPT-5.2 | `--provider codex` | `npm install -g @openai/codex` + `OPENAI_API_KEY` | Different family, strong on logic and edge cases |
+| **Gemini CLI** | Gemini 2.5 Pro | `--provider gemini` | Install Gemini CLI + `GEMINI_API_KEY` | Different family, strong on data flow and API design |
+| **Claude CLI** *(fallback)* | Sonnet | `--provider claude` | Already installed | Same family — less diverse, but zero setup |
+
+**Auto-detection:** When no `--provider` flag is given, the skill checks which CLIs are installed and picks the first available in the order above (codex → gemini → claude).
 
 ## Cost Breakdown
 

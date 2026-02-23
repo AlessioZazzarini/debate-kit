@@ -2,13 +2,13 @@
 
 > This is a standalone document. It describes the cross-model adversarial review system that ships as a Claude Code skill. No project-specific dependencies required.
 
-A cross-model adversarial review system built into your Claude Code workflow. It spawns an external LLM as a subprocess to challenge plans, bug diagnoses, and code — then loops until the reviewer is satisfied or a round limit is hit.
+A cross-model adversarial review system built into your Claude Code workflow. You (Claude) are the orchestrator — the reviewer is a **different model family** (ChatGPT, Gemini, or Claude Sonnet as fallback) running as a read-only subprocess. Different model families catch different blind spots, which is the whole point.
 
 ---
 
 ## The Core Idea
 
-You're working in Claude Code (Opus). You write a plan or diagnose a bug. Instead of trusting yourself, you invoke `/debate` and a **separate LLM instance** (Claude Sonnet or GPT-5.2) reviews your work with read-only access to the codebase. It can find files, read code, and grep — but never edit anything.
+You're working in Claude Code (Opus). You write a plan or diagnose a bug. Instead of trusting yourself, you invoke `/debate` and a **different model** (ChatGPT via Codex CLI, Gemini, or Claude Sonnet as fallback) reviews your work with read-only access to the codebase. It can find files, read code, and grep — but never edit anything. Claude is the orchestrator AND the author being challenged — the reviewer is ideally from a different model family.
 
 The reviewer gives a verdict: **APPROVED** or **REVISE**. If REVISE, the orchestrator (Opus) revises the plan based on feedback, then sends the updated version back for another round. This continues for up to 3 rounds.
 
@@ -24,11 +24,37 @@ The reviewer gives a verdict: **APPROVED** or **REVISE**. If REVISE, the orchest
 
 ---
 
-## Two LLM Providers
+## Three LLM Providers
 
-### Claude CLI (Default)
+The skill auto-detects installed CLIs and picks the first available, preferring cross-model diversity.
 
-Runs Claude Sonnet as a subprocess using the `claude` CLI binary:
+### Codex CLI / ChatGPT (recommended)
+
+Runs GPT-5.2 via the `codex` CLI — a different model family from Claude:
+
+```
+codex exec -m gpt-5.2 -s read-only - < context.md > review.txt
+```
+
+- Sandbox: read-only mode (no writes)
+- Uses your `OPENAI_API_KEY`
+- Invoke with `--provider codex` flag
+
+### Gemini CLI
+
+Runs Gemini 2.5 Pro — yet another model family:
+
+```
+gemini -m gemini-2.5-pro < context.md > review.txt
+```
+
+- Read-only access to codebase
+- Uses your `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)
+- Invoke with `--provider gemini` flag
+
+### Claude CLI (same-family fallback)
+
+Runs Claude Sonnet as a subprocess. Same model family as the orchestrator, so less adversarial diversity — but requires zero extra setup:
 
 ```
 claude -p --model sonnet --allowedTools "Read,Grep,Glob" \
@@ -39,18 +65,6 @@ claude -p --model sonnet --allowedTools "Read,Grep,Glob" \
 - Cost cap: $0.50 per round
 - Uses your existing `ANTHROPIC_API_KEY`
 - Requires `env -u CLAUDECODE` to allow nested invocation
-
-### Codex CLI (OpenAI)
-
-Runs GPT-5.2 via the `codex` CLI for cross-model diversity:
-
-```
-codex exec -m gpt-5.2 -s read-only - < context.md > review.txt
-```
-
-- Sandbox: read-only mode (no writes)
-- Uses your `OPENAI_API_KEY`
-- Invoke with `--provider codex` flag
 
 ---
 
@@ -129,7 +143,7 @@ You (Claude Opus in Claude Code)
  │   ├─ [1] Assemble context.md (architecture + domain + subject)
  │   │
  │   ├─ [2] Spawn reviewer subprocess ──────────────────────┐
- │   │       (Claude Sonnet OR GPT-5.2)                     │
+ │   │       (ChatGPT / Gemini / Claude Sonnet)             │
  │   │       Read-only tools: Read, Grep, Glob              │
  │   │       Budget: $0.50/round                            │
  │   │                                                      │
@@ -164,4 +178,4 @@ You (Claude Opus in Claude Code)
 
 **File-based I/O.** Plan text is never interpolated into shell arguments — always written to files and piped via stdin. This avoids shell quoting issues with complex content.
 
-**Cross-model diversity.** Using a different model family (GPT-5.2 vs Claude Sonnet) for review catches blind spots that same-family models might share.
+**Cross-model diversity.** The architecture supports multiple reviewer providers (Codex/ChatGPT, Gemini, Claude). Using a different model family from the orchestrator catches blind spots that same-family models share. The skill auto-detects installed providers and prefers cross-model options.

@@ -1,25 +1,31 @@
 ---
 name: debate
-description: "Cross-model adversarial review of plans, bug diagnoses, and code. Invokes an external reviewer (Claude CLI or Codex CLI) to challenge your work."
+description: "Cross-model adversarial review of plans, bug diagnoses, and code. Invokes an external LLM (Codex/ChatGPT, Gemini, or Claude) to challenge your work."
 user_invocable: true
 ---
 
 # /debate — Cross-Model Adversarial Review
 
-Invoke an external reviewer to adversarially challenge a plan, bug diagnosis, or codebase. The reviewer runs in a subprocess via Bash — you never leave your terminal.
+Invoke an external LLM to adversarially challenge a plan, bug diagnosis, or codebase. You (Claude) are the orchestrator — the reviewer is a **different model** running as a read-only subprocess. Cross-model diversity is the point: different model families catch different blind spots.
 
 ## Invocation
 
 ```
-/debate                    → plan review (default), default: claude
+/debate                    → plan review (default), uses first available provider
 /debate debug              → debugging review mode
 /debate review             → code review (recent changes via git diff)
 /debate review src/lib/    → code review of specific path
-/debate --provider codex   → force Codex CLI (cross-model diversity)
-/debate --provider claude  → force Claude CLI (full codebase read access)
+/debate --provider codex   → Codex CLI / ChatGPT (recommended for diversity)
+/debate --provider gemini  → Gemini CLI
+/debate --provider claude  → Claude CLI (same-family fallback)
 ```
 
-Default provider: `claude` (no extra install needed).
+**Provider selection order** (when no `--provider` flag):
+1. `codex` — if Codex CLI is installed (cross-model, recommended)
+2. `gemini` — if Gemini CLI is installed (cross-model)
+3. `claude` — always available as fallback (same-family, less diverse)
+
+To auto-detect, check which CLI binaries exist: `command -v codex`, `command -v gemini`, `command -v claude`. Use the first one found in the order above.
 
 ## Instructions
 
@@ -30,7 +36,7 @@ When the user invokes `/debate`, follow these steps exactly.
 Parse the invocation for:
 - **Mode**: `review` keyword → code review mode. `debug` keyword → debug mode. Otherwise → plan mode.
 - **Review target** (review mode only): Any path after `review` (e.g., `src/lib/inngest/`). If none, use recent git diff.
-- **Provider**: `--provider codex` or `--provider claude`. Default: `claude`.
+- **Provider**: `--provider codex`, `--provider gemini`, or `--provider claude`. Default: auto-detect (first available in order: codex → gemini → claude).
 
 **Path validation (review mode only):** If a path is provided:
 1. Resolve it to an absolute path: `RESOLVED=$(realpath -- "$TARGET" 2>/dev/null)`
@@ -190,9 +196,69 @@ Wait for user confirmation. If the user declines, clean up (`rm -rf "$DEBATE_DIR
 4. **When constructing bash commands, use heredocs with quoted delimiters** (`<<'EOF'`) to prevent variable expansion in prompt text.
 5. **Use `set -o pipefail`** in any bash invocation that still uses pipes.
 
-#### Claude CLI Provider (default)
+**Design principle:** You (Claude) are the orchestrator. The reviewer should ideally be a **different model family** — this is what makes the review adversarial. Claude reviewing Claude's work catches fewer blind spots than GPT or Gemini reviewing Claude's work. The providers below are listed in recommended order.
 
-**Round 1 (initial review):**
+**Round 2+ (all providers):** Session resume is intentionally avoided — it's fragile across providers. Instead, assemble a fresh context pack for each round:
+
+1. Write the revised plan/diagnosis to `$DEBATE_DIR/revised.md` using the Write tool.
+2. Rebuild `$DEBATE_DIR/context.md` with:
+   - The original architecture brief and domain context (unchanged)
+   - The revised plan/diagnosis (replacing the original)
+   - A new section: `# Prior Review Feedback` containing the reviewer's previous output
+3. Run a fresh invocation using the same Round 1 command, reading from the updated `$DEBATE_DIR/context.md`.
+
+---
+
+#### Codex CLI Provider (recommended)
+
+**Why recommended:** GPT-5.2 is a different model family from Claude. Cross-family review catches architectural blind spots that same-family models share.
+
+**Round 1:**
+
+For Codex, the review prompt must be prepended to the context file (no `--append-system-prompt`). When using Codex provider, include the review prompt at the top of `$DEBATE_DIR/context.md` before writing it.
+
+```bash
+codex exec \
+  -m gpt-5.2 \
+  -s read-only \
+  - < "$DEBATE_DIR/context.md" \
+  > "$DEBATE_DIR/review.txt" \
+  2> "$DEBATE_DIR/stderr.txt"
+```
+
+Note: The `-` argument tells Codex to read the prompt from stdin, which is redirected from the context file.
+
+**Install:** `npm install -g @openai/codex` + `OPENAI_API_KEY` env var. If `codex` is not found, tell the user to install it. If the reviewer returns a 401 or auth error, stop and tell the user to run `codex login`.
+
+---
+
+#### Gemini CLI Provider
+
+**Why useful:** Gemini is yet another model family. Running the same review through Gemini after Codex provides a third perspective. Particularly strong on data flow and API design issues.
+
+**Round 1:**
+
+Like Codex, the review prompt must be prepended to the context file. When using Gemini provider, include the review prompt at the top of `$DEBATE_DIR/context.md` before writing it.
+
+```bash
+gemini \
+  -m gemini-2.5-pro \
+  < "$DEBATE_DIR/context.md" \
+  > "$DEBATE_DIR/review.txt" \
+  2> "$DEBATE_DIR/stderr.txt"
+```
+
+**Install:** `npm install -g @anthropic-ai/claude-code@latest` is not needed — check `command -v gemini`. Requires `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) env var. If `gemini` is not found, tell the user to install the Gemini CLI. If auth fails, tell the user to check their API key.
+
+**Note:** Gemini CLI may have different flags than shown here. If the command fails, check `gemini --help` for the correct invocation syntax and adjust accordingly. The pattern is always: read context from stdin, write review to stdout, redirect stderr.
+
+---
+
+#### Claude CLI Provider (same-family fallback)
+
+**Why fallback:** Claude reviewing Claude's own work provides less adversarial diversity than a different model family. Use this when no other provider is installed — it still catches real bugs, just with more shared blind spots.
+
+**Round 1:**
 ```bash
 env -u CLAUDECODE claude -p \
   --model sonnet \
@@ -208,41 +274,7 @@ SYSPROMPT
   2> "$DEBATE_DIR/stderr.txt"
 ```
 
-**Round 2+ (fresh invocation with prior feedback):**
-
-Session resume is intentionally avoided — it's fragile across providers and session ID extraction is unreliable. Instead, assemble a new context pack for each round.
-
-1. Write the revised plan/diagnosis to `$DEBATE_DIR/revised.md` using the Write tool.
-2. Rebuild `$DEBATE_DIR/context.md` with:
-   - The original architecture brief and domain context (unchanged)
-   - The revised plan/diagnosis (replacing the original)
-   - A new section: `# Prior Review Feedback` containing the reviewer's previous output
-3. Run a fresh invocation using the same command as Round 1, reading from the updated `$DEBATE_DIR/context.md`.
-
-This costs the same (each round is capped by `--max-budget-usd 0.50`) and is more reliable.
-
-#### Codex CLI Provider
-
-**Round 1 (initial review):**
-
-For Codex, the review prompt must be prepended to the context file (no `--append-system-prompt`). When using Codex provider, include the review prompt at the top of `$DEBATE_DIR/context.md` before writing it.
-
-```bash
-codex exec \
-  -m gpt-5.2 \
-  -s read-only \
-  - < "$DEBATE_DIR/context.md" \
-  > "$DEBATE_DIR/review.txt" \
-  2> "$DEBATE_DIR/stderr.txt"
-```
-
-Note: The `-` argument tells Codex to read the prompt from stdin, which is redirected from the context file.
-
-**Round 2+ (fresh invocation with prior feedback):**
-
-Same approach as Claude CLI: rebuild `$DEBATE_DIR/context.md` with the revised plan and prior review feedback, then run a fresh `codex exec` invocation. Do not use `codex resume` — Codex stderr is human text, not JSON, so session ID extraction is unreliable.
-
-**Note:** Codex CLI requires `npm install -g @openai/codex` and `OPENAI_API_KEY` env var. If `codex` is not found, tell the user to install it. If the reviewer returns a 401 or auth error, stop and tell the user to run `codex login`.
+No extra install needed — Claude CLI is available in any Claude Code session. Requires `env -u CLAUDECODE` to allow nested invocation.
 
 ### Step 4a: Review Prompt — Plan Mode
 
@@ -405,7 +437,7 @@ After the loop completes, present a summary:
 ## Debate Summary
 
 **Mode:** Plan Review | Debug Review | Code Review
-**Provider:** Claude CLI (sonnet) | Codex CLI (gpt-5.2)
+**Provider:** Codex CLI (gpt-5.2) | Gemini CLI (gemini-2.5-pro) | Claude CLI (sonnet)
 **Rounds:** N
 **Final verdict:** APPROVED | REVISE issues=N critical=N | issues=N critical=N (review mode)
 
@@ -442,15 +474,24 @@ These notes come from live testing and should inform how you execute the skill:
 
 ## Adding a New Provider
 
-To add Gemini or another CLI-based model, add a new provider block in Step 4 following this template:
+Any CLI tool that can read a prompt from stdin and write a review to stdout can be a provider. To add one, add a new provider block in Step 4 following this template:
 
 ```
 #### [Provider Name] CLI Provider
 
-[Round 1 command — must use input redirection, redirect stdout/stderr, use env -u CLAUDECODE if needed]
-[Round 2+ resume command — must write revised content to $DEBATE_DIR/revised.md and use input redirection]
+**Why useful:** [What perspective this model family brings]
 
-**Note:** Requires [install command] and [env var].
+**Round 1:**
+[Command — must use input redirection from $DEBATE_DIR/context.md, redirect stdout to review.txt, stderr to stderr.txt]
+
+**Install:** [Package manager command] + [env var name].
 ```
 
-No code changes needed — just a new text block in this skill file.
+The provider contract:
+1. **Input:** Read context from `$DEBATE_DIR/context.md` via stdin (`< "$file"`)
+2. **Output:** Write review to stdout (redirected to `$DEBATE_DIR/review.txt`)
+3. **Errors:** Write errors to stderr (redirected to `$DEBATE_DIR/stderr.txt`)
+4. **Read-only:** The reviewer must not modify any files in the repository
+5. **Review prompt:** Prepend to context file (or use system prompt if the CLI supports it)
+
+No code changes needed — just a new text block in this skill file. Then add the provider name to the auto-detect order in the invocation section if it should be preferred over existing providers.
